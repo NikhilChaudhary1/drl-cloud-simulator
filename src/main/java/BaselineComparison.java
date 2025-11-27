@@ -27,7 +27,7 @@ public class BaselineComparison {
     private static final int HOSTS = 10;
     private static final int VMS = 20;
     // Try 10,000 first. If your PC is fast, change to 100,000!
-    private static final int CLOUDLETS = 1500;
+    private static final int CLOUDLETS = 750;
 
     private static final double COST_PER_SEC = 0.1;
     private static final long SEED = 42; // Fixed seed for fair comparison
