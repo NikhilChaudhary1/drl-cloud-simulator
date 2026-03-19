@@ -6,100 +6,123 @@ import os
 import time
 import random
 import numpy as np
+from collections import deque
 
 # --- CONFIGURATION ---
-STATE_DIM = 3  # Matches your report: [CPU_Load, RAM_Load, Task_Size]
-ACTION_DIM = 5 # Number of VMs (change this to match your CloudSim setup)
+STATE_DIM = 3  # [CPU, RAM, Task_Size]
+ACTION_DIM = 5 # Matches number of VMs
 LEARNING_RATE = 0.001
-GAMMA = 0.99
-EPSILON = 1.0  # Exploration rate
+GAMMA = 0.95      # Discount factor
+EPSILON = 0.2     # 20% exploration, 80% exploitation
+MEMORY_SIZE = 2000
+BATCH_SIZE = 32
 
-# File paths for communication with Java
 STATE_FILE = "state.json"
 ACTION_FILE = "action.json"
+REWARD_FILE = "reward.json"
 
-# --- 1. THE DEEP Q-NETWORK (DQN) ARCHITECTURE ---
-# As described in Section 3.3 of your report
+# --- 1. DEEP Q-NETWORK ---
 class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
         super(DQN, self).__init__()
-        # Input Layer -> Hidden Layer 1
-        self.fc1 = nn.Linear(input_dim, 128)
-        # Hidden Layer 1 -> Hidden Layer 2
-        self.fc2 = nn.Linear(128, 128)
-        # Hidden Layer 2 -> Output Layer (Q-values for each VM)
-        self.fc3 = nn.Linear(128, output_dim)
-
-        # Activation Function (ReLU)
-        self.relu = nn.ReLU()
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
 
     def forward(self, x):
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
-        return self.fc3(x)
+        return self.fc(x)
 
 # --- 2. AGENT INITIALIZATION ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 policy_net = DQN(STATE_DIM, ACTION_DIM).to(device)
 optimizer = optim.Adam(policy_net.parameters(), lr=LEARNING_RATE)
+memory = deque(maxlen=MEMORY_SIZE)
+criterion = nn.MSELoss()
 
-print(f"Agent Initialized on {device}")
-print("Waiting for CloudSim state observations...")
+def train_step():
+    """Updates the Neural Network using a batch of past experiences."""
+    if len(memory) < BATCH_SIZE:
+        return
 
-# --- 3. MAIN COMMUNICATION LOOP ---
+    batch = random.sample(memory, BATCH_SIZE)
+    states, actions, rewards, next_states = zip(*batch)
+
+    states = torch.FloatTensor(np.array(states)).to(device)
+    actions = torch.LongTensor(actions).unsqueeze(1).to(device)
+    rewards = torch.FloatTensor(rewards).to(device)
+    next_states = torch.FloatTensor(np.array(next_states)).to(device)
+
+    # Current Q-values predicted by the network
+    current_q = policy_net(states).gather(1, actions)
+
+    # Max future Q-value (Bellman Equation logic)
+    max_next_q = policy_net(next_states).detach().max(1)[0]
+    expected_q = rewards + (GAMMA * max_next_q)
+
+    loss = criterion(current_q.squeeze(), expected_q)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+# --- 3. COMMUNICATION & LEARNING LOOP ---
 def main_loop():
+    last_state = None
+    last_action = None
+
+    print(f"Agent Active on {device}. Learning enabled.")
+
     while True:
-        # Step A: Check if Java has sent a state
+        # A. ACTION PHASE: Java asks for a decision
         if os.path.exists(STATE_FILE):
             try:
-                # 1. Read the State from JSON
                 with open(STATE_FILE, 'r') as f:
                     data = json.load(f)
 
-                # Report mentions State = [CPU, RAM, Task]
-                # We assume 'data' looks like: {"cpu_load": 0.5, "ram_load": 0.2, "task_size": 1500}
-                state_vector = [
-                    data.get("cpu_load", 0),
-                    data.get("ram_load", 0),
-                    data.get("task_size", 0)
-                ]
-
-                # Convert to Tensor for PyTorch
+                state_vector = [data.get("cpu_load", 0), data.get("ram_load", 0), data.get("task_size", 0)]
                 state_tensor = torch.FloatTensor(state_vector).unsqueeze(0).to(device)
 
-                # 2. Select Action (Epsilon-Greedy)
-                # If random number < epsilon, choose random VM (Exploration)
+                # Epsilon-Greedy Selection
                 if random.random() < EPSILON:
                     action = random.randint(0, ACTION_DIM - 1)
-                    print(f"State: {state_vector} | Action: VM #{action} (Random Exploration)")
                 else:
-                    # Else, ask the Neural Network (Exploitation)
                     with torch.no_grad():
-                        q_values = policy_net(state_tensor)
-                        action = q_values.argmax().item()
-                        print(f"State: {state_vector} | Action: VM #{action} (AI Prediction)")
+                        action = policy_net(state_tensor).argmax().item()
 
-                # 3. Write Action back to JSON for Java
-                response = {"vm_id": action}
+                # Save context for learning later
+                last_state = state_vector
+                last_action = action
 
-                # Write to a temp file first to avoid read/write collisions
-                with open("action_temp.json", 'w') as f:
-                    json.dump(response, f)
+                with open(ACTION_FILE, 'w') as f:
+                    json.dump({"vm_id": action}, f)
 
-                # Rename to actual file (atomic operation)
-                os.replace("action_temp.json", ACTION_FILE)
-
-                # 4. Clean up state file to signal we are done
                 os.remove(STATE_FILE)
+            except:
+                pass
 
-            except Exception as e:
-                print(f"Error processing state: {e}")
-                time.sleep(0.1)
+        # B. LEARNING PHASE: Java sends back results (Rewards)
+        if os.path.exists(REWARD_FILE):
+            try:
+                with open(REWARD_FILE, 'r') as f:
+                    reward_data = json.load(f)
 
-        else:
-            # Sleep briefly to save CPU while waiting for Java
-            time.sleep(0.01)
+                reward = reward_data.get("reward", 0)
+                # We assume a static next state for this simplified version
+                next_state = [0.5, 0.5, 0]
+
+                if last_state is not None:
+                    memory.append((last_state, last_action, reward, next_state))
+                    train_step()
+                    print(f"Update: Experience added to Replay Buffer. Reward received: {reward:.2f}")
+
+                os.remove(REWARD_FILE)
+            except:
+                pass
+
+        time.sleep(0.01)
 
 if __name__ == "__main__":
-    print("Running")
     main_loop()
