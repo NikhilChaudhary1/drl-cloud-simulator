@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DRL Agent Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 30px;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin: 0;
+            font-size: 32px;
+        }
+        .header p {
+            color: #7f8c8d;
+            font-size: 16px;
+            margin-top: 5px;
+        }
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.05);
+            border-top: 4px solid #3498db;
+        }
+        .card.full-width {
+            grid-column: 1 / -1;
+            border-top: 4px solid #2ecc71;
+        }
+        .card h2 {
+            margin-top: 0;
+            font-size: 20px;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        canvas {
+            max-height: 350px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Cloud Resource Scheduler Dashboard</h1>
+    <p>Deep Reinforcement Learning vs Baseline Algorithms (500 Tasks)</p>
+</div>
+
+<div class="dashboard">
+
+    <div class="card">
+        <h2>Agent Learning Curve (ATAT over 40 Epochs)</h2>
+        <canvas id="atatChart"></canvas>
+    </div>
+
+    <div class="card" style="border-top-color: #9b59b6;">
+        <h2>Neural Network Convergence (Average Loss)</h2>
+        <canvas id="lossChart"></canvas>
+    </div>
+
+    <div class="card full-width">
+        <h2>Algorithm Performance Comparison (Best Turnaround Time)</h2>
+        <canvas id="comparisonChart"></canvas>
+    </div>
+
+</div>
+
+<script>
+    // Register the DataLabels plugin globally
+    Chart.register(ChartDataLabels);
+
+    // --- DATA INJECTION ---
+    const epochs = Array.from({length: 40}, (_, i) => i + 1);
+
+    const atatData = [492.79, 531.30, 495.99, 500.84, 483.12, 494.53, 501.15, 509.75, 482.95, 475.74, 502.40, 480.16, 509.38, 513.53, 476.73, 481.89, 495.43, 534.55, 520.94, 506.39, 485.10, 497.53, 482.81, 488.65, 475.87, 486.49, 487.05, 502.79, 479.97, 474.27, 499.91, 474.49, 493.86, 504.45, 477.06, 468.92, 495.89, 497.43, 487.90, 487.58];
+
+    const lossData = [10.12, 2.08, 0.62, 0.29, 0.21, 0.16, 0.14, 0.13, 0.13, 0.10, 0.10, 0.10, 0.09, 0.08, 0.08, 0.09, 0.11, 0.09, 0.07, 0.08, 0.08, 0.09, 0.07, 0.07, 0.07, 0.06, 0.08, 0.06, 0.06, 0.06, 0.07, 0.05, 0.06, 0.05, 0.05, 0.05, 0.06, 0.05, 0.04, 0.04];
+
+    // --- GRAPH 1: ATAT Line Chart ---
+    const ctxAtat = document.getElementById('atatChart').getContext('2d');
+    new Chart(ctxAtat, {
+        type: 'line',
+        data: {
+            labels: epochs,
+            datasets: [{
+                label: 'DRL Agent ATAT (s)',
+                data: atatData,
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                borderWidth: 2.5,
+                tension: 0.3,
+                fill: true,
+                pointRadius: 3,
+                pointBackgroundColor: '#2980b9'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                // Find the lowest point and label it
+                datalabels: {
+                    display: function(context) {
+                        return context.dataset.data[context.dataIndex] === 468.92;
+                    },
+                    align: 'bottom',
+                    offset: 8,
+                    backgroundColor: '#27ae60',
+                    color: 'white',
+                    borderRadius: 4,
+                    font: { weight: 'bold' },
+                    formatter: function(value) {
+                        return 'Best: ' + value + 's';
+                    }
+                },
+                annotation: {
+                    annotations: {
+                        line1: {
+                            type: 'line',
+                            yMin: 488.07,
+                            yMax: 488.07,
+                            borderColor: '#e74c3c',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            label: {
+                                display: true,
+                                content: 'Round Robin Baseline (488.07s)',
+                                position: 'end',
+                                backgroundColor: 'rgba(231, 76, 60, 0.8)'
+                            }
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    title: { display: true, text: 'Turnaround Time (Seconds)' },
+                    min: 460,
+                    max: 540
+                },
+                x: { title: { display: true, text: 'Training Epochs' } }
+            }
+        }
+    });
+
+    // --- GRAPH 2: Neural Network Loss ---
+    const ctxLoss = document.getElementById('lossChart').getContext('2d');
+    new Chart(ctxLoss, {
+        type: 'line',
+        data: {
+            labels: epochs,
+            datasets: [{
+                label: 'Mean Squared Error (Loss)',
+                data: lossData,
+                borderColor: '#9b59b6',
+                backgroundColor: 'rgba(155, 89, 182, 0.1)',
+                borderWidth: 2.5,
+                tension: 0.2,
+                fill: true,
+                pointRadius: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                datalabels: { display: false } // Keep the loss chart clean
+            },
+            scales: {
+                y: {
+                    title: { display: true, text: 'Loss Value' },
+                    type: 'logarithmic'
+                },
+                x: { title: { display: true, text: 'Training Epochs' } }
+            }
+        }
+    });
+
+    // --- GRAPH 3: Final Comparison Bar Chart ---
+    const ctxComparison = document.getElementById('comparisonChart').getContext('2d');
+    new Chart(ctxComparison, {
+        type: 'bar',
+        data: {
+            labels: ['FCFS (Single VM)', 'Round Robin', 'DRL Agent (Best Epoch)'],
+            datasets: [{
+                label: 'Average Turnaround Time (s)',
+                data: [2785.82, 488.07, 468.92],
+                backgroundColor: [
+                    'rgba(231, 76, 60, 0.7)',
+                    'rgba(241, 196, 15, 0.7)',
+                    'rgba(46, 204, 113, 0.7)'
+                ],
+                borderColor: [
+                    '#c0392b',
+                    '#f39c12',
+                    '#27ae60'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: { top: 30 } // Adds room so the labels don't clip off the top
+            },
+            plugins: {
+                legend: { display: false },
+                // Draw the numbers directly on top of the bars
+                datalabels: {
+                    anchor: 'end',
+                    align: 'top',
+                    color: '#2c3e50',
+                    font: { weight: 'bold', size: 14 },
+                    formatter: function(value) {
+                        return value + ' s';
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    title: { display: true, text: 'Turnaround Time (Seconds) - Lower is Better' },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+</script>
+</body>
+</html>
